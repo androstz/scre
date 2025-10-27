@@ -1,7 +1,5 @@
 import json
 import requests
-from collections import deque
-import numpy as np
 from datetime import datetime
 
 # --- Helper Functions ---
@@ -10,6 +8,7 @@ def calculate_ema(prices, period):
         return []
     k = 2 / (period + 1)
     ema = [0] * len(prices)
+    # Seed first EMA
     ema[period - 1] = sum(prices[:period]) / period
     for i in range(period, len(prices)):
         ema[i] = prices[i] * k + ema[i - 1] * (1 - k)
@@ -18,13 +17,15 @@ def calculate_ema(prices, period):
 def calculate_rsi(prices, period=14):
     if len(prices) <= period:
         return []
-    deltas = np.diff(prices)
-    gains = np.where(deltas > 0, deltas, 0)
-    losses = np.where(deltas < 0, -deltas, 0)
-    avg_gain = np.mean(gains[:period])
-    avg_loss = np.mean(losses[:period])
+    changes = [prices[i] - prices[i-1] for i in range(1, len(prices))]
+    gains = [max(c, 0) for c in changes]
+    losses = [max(-c, 0) for c in changes]
+
+    avg_gain = sum(gains[:period]) / period
+    avg_loss = sum(losses[:period]) / period
+
     rsi = []
-    for i in range(len(gains)):
+    for i in range(len(changes)):
         if i < period:
             rs = avg_gain / avg_loss if avg_loss != 0 else 0
         else:
@@ -33,7 +34,7 @@ def calculate_rsi(prices, period=14):
             rs = avg_gain / avg_loss if avg_loss != 0 else 0
         rsi_val = 100 - (100 / (1 + rs)) if rs != 0 else 100
         rsi.append(rsi_val)
-    return rsi[-len(prices):]
+    return rsi
 
 def get_binance_symbols():
     url = "https://fapi.binance.com/fapi/v1/ticker/price"
@@ -116,8 +117,8 @@ def handler(event, context):
                     signals.append({
                         'symbol': symbol,
                         'price': closes[-1],
-                        'emaShort': ema_s[-1],
-                        'emaLong': ema_l[-1],
+                        'emaShort': round(ema_s[-1], 4),
+                        'emaLong': round(ema_l[-1], 4),
                         'rsi': round(rsi_vals[-1], 2) if rsi_vals else None,
                         'timeframe': timeframe
                     })
