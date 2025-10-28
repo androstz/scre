@@ -1,5 +1,6 @@
 import json
 import requests
+import time
 from datetime import datetime
 
 # --- Helper Functions ---
@@ -7,8 +8,7 @@ def calculate_ema(prices, period):
     if len(prices) < period:
         return []
     k = 2 / (period + 1)
-    ema = [0] * len(prices)
-    # Seed first EMA
+    ema = [0.0] * len(prices)
     ema[period - 1] = sum(prices[:period]) / period
     for i in range(period, len(prices)):
         ema[i] = prices[i] * k + ema[i - 1] * (1 - k)
@@ -77,7 +77,6 @@ def fetch_klines(exchange, symbol, interval, limit=100):
         return closes
     return []
 
-# --- Main Handler ---
 def handler(event, context):
     try:
         query = event.get('queryStringParameters') or {}
@@ -87,7 +86,6 @@ def handler(event, context):
         ema_long = int(query.get('emaLong', 26))
         rsi_period = int(query.get('rsiPeriod', 14))
 
-        # Validate
         if ema_short >= ema_long:
             return {
                 'statusCode': 400,
@@ -95,11 +93,11 @@ def handler(event, context):
                 'body': json.dumps({'error': 'EMA Short must be < EMA Long'})
             }
 
-        # Get symbols
         symbols = get_binance_symbols() if exchange == 'binance' else get_bybit_symbols()
         signals = []
 
-        for symbol in symbols[:50]:  # Limit to 50 for speed
+        # Limit to top 50 symbols for speed
+        for symbol in symbols[:50]:
             try:
                 closes = fetch_klines(exchange, symbol, timeframe, limit=100)
                 if len(closes) < max(ema_long, rsi_period) + 10:
@@ -112,7 +110,7 @@ def handler(event, context):
                 if len(ema_s) < 2 or len(ema_l) < 2:
                     continue
 
-                # Check fresh crossover: current short > long, previous short <= long
+                # Fresh bullish crossover: current short > long, previous short <= long
                 if ema_s[-1] > ema_l[-1] and ema_s[-2] <= ema_l[-2]:
                     signals.append({
                         'symbol': symbol,
@@ -123,7 +121,8 @@ def handler(event, context):
                         'timeframe': timeframe
                     })
             except Exception as e:
-                continue  # Skip failed symbols
+                continue  # Skip problematic symbols
+            time.sleep(0.05)  # Avoid rate limits
 
         return {
             'statusCode': 200,
