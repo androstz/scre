@@ -3,38 +3,54 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Crypto Screener (Server-Powered)</title>
+    <title>Crypto Perpetual Screener</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         .fresh-signal { background-color: #e6f4ea; border-left: 4px solid #34a853; padding-left: 10px; }
         .loading { text-align: center; padding: 2rem; }
+        .card { height: 100%; }
     </style>
 </head>
 <body class="bg-light">
     <div class="container py-4">
-        <h1 class="text-center mb-3">Crypto Perpetual Screener</h1>
-        <p class="text-center text-muted">Fresh EMA crossovers (server-powered)</p>
+        <h1 class="text-center mb-2">Crypto Perpetual Screener</h1>
+        <p class="text-center text-muted mb-4">Fresh EMA crossovers in the latest completed candle</p>
 
         <div class="row mb-4">
-            <div class="col-md-8 mx-auto">
-                <div class="d-flex gap-2 flex-wrap">
-                    <select id="exchange" class="form-select w-auto">
-                        <option value="binance">Binance</option>
-                        <option value="bybit">Bybit</option>
-                    </select>
-                    <select id="timeframe" class="form-select w-auto">
-                        <option value="1m">1m</option>
-                        <option value="5m">5m</option>
-                        <option value="15m" selected>15m</option>
-                    </select>
-                    <input type="number" id="emaShort" class="form-control w-auto" value="9" min="1">
-                    <input type="number" id="emaLong" class="form-control w-auto" value="26" min="1">
-                    <button id="scanBtn" class="btn btn-primary">Scan</button>
+            <div class="col-md-10 mx-auto">
+                <div class="d-flex flex-wrap gap-2 align-items-end">
+                    <div>
+                        <label class="form-label">Exchange</label>
+                        <select id="exchange" class="form-select">
+                            <option value="binance">Binance</option>
+                            <option value="bybit">Bybit</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label">Timeframe</label>
+                        <select id="timeframe" class="form-select">
+                            <option value="1m">1m</option>
+                            <option value="5m">5m</option>
+                            <option value="15m" selected>15m</option>
+                            <option value="1h">1h</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label">EMA Short</label>
+                        <input type="number" id="emaShort" class="form-control" value="9" min="1">
+                    </div>
+                    <div>
+                        <label class="form-label">EMA Long</label>
+                        <input type="number" id="emaLong" class="form-control" value="26" min="1">
+                    </div>
+                    <div>
+                        <button id="scanBtn" class="btn btn-primary h-100">Scan Markets</button>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <div id="status" class="text-center text-muted mb-3"></div>
+        <div id="status" class="text-center mb-3"></div>
         <div id="results" class="row"></div>
     </div>
 
@@ -46,61 +62,84 @@
         scanBtn.addEventListener('click', async () => {
             const exchange = document.getElementById('exchange').value;
             const timeframe = document.getElementById('timeframe').value;
-            const emaShort = document.getElementById('emaShort').value;
-            const emaLong = document.getElementById('emaLong').value;
+            const emaShort = parseInt(document.getElementById('emaShort').value);
+            const emaLong = parseInt(document.getElementById('emaLong').value);
 
-            if (parseInt(emaShort) >= parseInt(emaLong)) {
+            if (emaShort >= emaLong) {
                 alert('EMA Short must be less than EMA Long');
                 return;
             }
 
-            statusEl.innerHTML = '<div class="loading"><div class="spinner-border text-primary"></div><p>Scanning... (up to 50 symbols)</p></div>';
+            statusEl.innerHTML = `
+                <div class="loading">
+                    <div class="spinner-border text-primary mb-2"></div>
+                    <p>Scanning up to 50 USDT pairs on ${exchange} (${timeframe})...</p>
+                </div>
+            `;
             resultsEl.innerHTML = '';
 
             try {
                 const url = `/.netlify/functions/screener?exchange=${exchange}&timeframe=${timeframe}&emaShort=${emaShort}&emaLong=${emaLong}`;
                 const res = await fetch(url);
-                const data = await res.json();
+                const text = await res.text();
 
-                if (data.error) {
-                    statusEl.innerHTML = `<div class="alert alert-danger">${data.error}</div>`;
-                    return;
+                // Debug: log raw response
+                console.log("Raw response:", text);
+
+                // Try to parse as JSON
+                let data;
+                try {
+                    data = JSON.parse(text);
+                } catch (e) {
+                    throw new Error("Server returned invalid response. Check function logs in Netlify.");
                 }
 
-                statusEl.innerHTML = `<p class="text-success">Found ${data.count} fresh signal(s) • ${new Date().toLocaleTimeString()}</p>`;
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                statusEl.innerHTML = `
+                    <p class="text-success fw-bold">
+                        ✅ Found ${data.count} fresh signal(s) • Updated: ${new Date().toLocaleTimeString()}
+                    </p>
+                `;
 
                 if (data.signals.length === 0) {
                     resultsEl.innerHTML = `
                         <div class="col-12">
-                            <div class="alert alert-info">No fresh EMA crossovers found. Try 1m/5m with EMA 5/13 during volatile markets.</div>
+                            <div class="alert alert-info">
+                                <strong>No fresh EMA crossovers</strong> found.<br>
+                                <small>Try 1m/5m with EMA 5/13 during volatile markets (e.g., BTC moves >2%).</small>
+                            </div>
                         </div>
                     `;
                     return;
                 }
 
                 resultsEl.innerHTML = data.signals.map(sig => `
-                    <div class="col-md-6 col-lg-4 mb-3">
-                        <div class="card fresh-signal">
+                    <div class="col-md-6 col-lg-4 mb-4">
+                        <div class="card fresh-signal h-100">
                             <div class="card-body">
-                                <h5>${sig.symbol} <span class="badge bg-success">🆕</span></h5>
-                                <p>
-                                    Price: $${sig.price.toFixed(2)}<br>
-                                    EMA: ${emaShort} > ${emaLong}<br>
-                                    RSI: ${sig.rsi !== null ? sig.rsi : 'N/A'}
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <h5 class="mb-2">${sig.symbol} <span class="badge bg-success">🆕 Fresh</span></h5>
+                                    <span class="badge bg-secondary">${exchange.toUpperCase()}</span>
+                                </div>
+                                <p class="mb-2">
+                                    <strong>Price:</strong> $${sig.price.toFixed(2)}<br>
+                                    <strong>EMA Crossover:</strong> ${emaShort} > ${emaLong}<br>
+                                    <strong>RSI:</strong> ${sig.rsi !== null ? sig.rsi : 'N/A'}
                                 </p>
-                                <a href="https://www.tradingview.com/chart/?symbol=${exchange.toUpperCase()}:${sig.symbol.replace('USDT','')}USD&interval=${timeframe.replace('1m','1').replace('5m','5').replace('15m','15')}" 
-                                   target="_blank" class="btn btn-sm btn-outline-primary">Chart</a>
+                                <a href="https://www.tradingview.com/chart/?symbol=${exchange.toUpperCase()}:${sig.symbol.replace('USDT','')}USD&interval=${timeframe.replace('1m','1').replace('5m','5').replace('15m','15').replace('1h','60')}" 
+                                   target="_blank" class="btn btn-sm btn-outline-primary">View Chart</a>
                             </div>
                         </div>
                     </div>
                 `).join('');
             } catch (err) {
-                statusEl.innerHTML = `<div class="alert alert-danger">Error: ${err.message}</div>`;
+                console.error("Scan error:", err);
+                statusEl.innerHTML = `<div class="alert alert-danger">❌ ${err.message}</div>`;
             }
         });
-
-        // Auto-scan on load (optional)
-        // scanBtn.click();
     </script>
 </body>
 </html>
