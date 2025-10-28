@@ -1,2 +1,6 @@
 [build]
   functions = "netlify/functions"
+
+[functions]
+  nodeVersion = "18"
+  pythonVersion = "3.10"
